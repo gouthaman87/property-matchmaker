@@ -14,7 +14,7 @@ class PropertyMatchmaker:
       - 131,072 tokens per request
     """
 
-    def __init__(self, data_path: str = "data/Central7_DB_20260218.xlsx", model: str = "llama-3.1-8b-instant", temperature: float = 0):
+    def __init__(self, data_path: str = "data/Central7_DB_20260218.xlsx", model: str = "llama-3.3-70b-versatile", temperature: float = 0):
         # model: str = "llama-3.3-70b-versatile"  # Original model (commented out — daily token limit exhausted)
         # 1. Load the Excel database
         self.df = pd.read_excel(data_path, sheet_name=1)
