@@ -1,5 +1,6 @@
 import time
 import hashlib
+import os
 import pandas as pd
 from langchain_groq import ChatGroq
 from langchain_experimental.agents.agent_toolkits import create_pandas_dataframe_agent
@@ -14,9 +15,13 @@ class PropertyMatchmaker:
       - 131,072 tokens per request
     """
 
-    def __init__(self, data_path: str = "data/Central7_DB_20260218.xlsx", model: str = "llama-3.3-70b-versatile", temperature: float = 0):
+    def __init__(self, data_path: str = None, model: str = "llama-3.3-70b-versatile", temperature: float = 0):
         # model: str = "llama-3.3-70b-versatile"  # Original model (commented out — daily token limit exhausted)
         # 1. Load the Excel database
+        if data_path is None:
+            # Construct path relative to this script's directory
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            data_path = os.path.join(script_dir, "..", "data", "Central7_DB_20260218.xlsx")
         self.df = pd.read_excel(data_path, sheet_name=1)
 
         # 2. Initialize the AI (uses GROQ_API_KEY env variable)
