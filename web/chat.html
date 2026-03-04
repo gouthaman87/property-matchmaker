@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% block title %}Copilot Chat{% endblock %}
+
+{% block content %}
+<div class="chat-container">
+  <div class="chat-sidebar">
+    <div class="sidebar-header">
+      <h3>🏘 UK Property Copilot</h3>
+      <p class="sidebar-sub">HM Land Registry data · England &amp; Wales</p>
+    </div>
+    <div class="sidebar-section">
+      <p class="sidebar-label">Try asking:</p>
+      <ul class="quick-prompts">
+        <li onclick="sendPrompt(this)">Average price of a detached house in Surrey in 2024?</li>
+        <li onclick="sendPrompt(this)">Top 10 counties by average price last year?</li>
+        <li onclick="sendPrompt(this)">How many new-build flats sold in Manchester in 2023?</li>
+        <li onclick="sendPrompt(this)">Leasehold vs freehold split in London?</li>
+        <li onclick="sendPrompt(this)">Monthly sales trend in Bristol since 2020?</li>
+        <li onclick="sendPrompt(this)">Properties sold for over £1 million in 2024?</li>
+      </ul>
+    </div>
+    <div class="sidebar-section">
+      <button class="btn-secondary" onclick="newSession()">+ New Conversation</button>
+    </div>
+    <div class="sidebar-footer">
+      <p class="data-note">📋 Data: HM Land Registry Price Paid Data<br/>© Crown copyright · OGL v3.0</p>
+    </div>
+  </div>
+
+  <div class="chat-main">
+    <div class="chat-messages" id="chatMessages">
+      {% if not messages %}
+      <div class="chat-welcome">
+        <div class="welcome-icon">🏠</div>
+        <h3>Welcome to UK Property Market Copilot</h3>
+        <p>Ask me anything about property prices, transaction volumes, market trends, and more across England and Wales.</p>
+        <p class="welcome-note">All data sourced from HM Land Registry — 30M+ transactions since 1995.</p>
+      </div>
+      {% endif %}
+
+      {% for msg in messages %}
+        {% if msg.role == 'user' %}
+        <div class="message message-user">
+          <div class="message-bubble">{{ msg.content }}</div>
+          <div class="message-meta">You</div>
+        </div>
+        {% elif msg.role == 'assistant' and msg.content %}
+        <div class="message message-assistant" data-answer="{{ msg.content | e }}">
+          <div class="message-bubble" id="md-{{ loop.index }}">{{ msg.content }}</div>
+          <div class="message-actions">
+            <button class="btn-feedback helpful" onclick="submitFeedback(this, 'helpful')">👍 Helpful</button>
+            <button class="btn-feedback needs-fix" onclick="submitFeedback(this, 'needs_fix')">👎 Needs Fix</button>
+          </div>
+        </div>
+        {% endif %}
+      {% endfor %}
+    </div>
+
+    <div class="chat-input-area">
+      <div class="chat-input-row">
+        <textarea id="chatInput" placeholder="Ask about UK property prices, trends, volumes…" rows="2"
+          onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage();}"></textarea>
+        <button class="btn-send" id="sendBtn" onclick="sendMessage()">Send ↑</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const SESSION_ID = "{{ session_id }}";
+
+function sendMessage() {
+  const input = document.getElementById('chatInput');
+  const q = input.value.trim();
+  if (!q) return;
+  input.value = '';
+  appendMessage('user', q);
+  document.getElementById('sendBtn').disabled = true;
+  const typing = appendTyping();
+
+  fetch('/chat/message', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({question: q, session_id: SESSION_ID})
+  })
+  .then(r => r.json())
+  .then(data => {
+    typing.remove();
+    appendMessage('assistant', data.reply || data.error);
+    document.getElementById('sendBtn').disabled = false;
+  })
+  .catch(() => {
+    typing.remove();
+    appendMessage('assistant', '⚠️ Something went wrong. Please try again.');
+    document.getElementById('sendBtn').disabled = false;
+  });
+}
+
+function appendMessage(role, content) {
+  const wrap = document.getElementById('chatMessages');
+  const welcome = wrap.querySelector('.chat-welcome');
+  if (welcome) welcome.remove();
+
+  const div = document.createElement('div');
+  div.className = `message message-${role}`;
+  if (role === 'assistant') {
+    div.dataset.answer = content;
+    div.innerHTML = `
+      <div class="message-bubble">${markdownToHtml(content)}</div>
+      <div class="message-actions">
+        <button class="btn-feedback helpful" onclick="submitFeedback(this, 'helpful')">👍 Helpful</button>
+        <button class="btn-feedback needs-fix" onclick="submitFeedback(this, 'needs_fix')">👎 Needs Fix</button>
+      </div>`;
+  } else {
+    div.innerHTML = `<div class="message-bubble">${escHtml(content)}</div><div class="message-meta">You</div>`;
+  }
+  wrap.appendChild(div);
+  wrap.scrollTop = wrap.scrollHeight;
+  return div;
+}
+
+function appendTyping() {
+  const wrap = document.getElementById('chatMessages');
+  const div = document.createElement('div');
+  div.className = 'message message-assistant';
+  div.innerHTML = '<div class="message-bubble typing-indicator"><span></span><span></span><span></span></div>';
+  wrap.appendChild(div);
+  wrap.scrollTop = wrap.scrollHeight;
+  return div;
+}
+
+function sendPrompt(el) {
+  document.getElementById('chatInput').value = el.textContent.trim();
+  sendMessage();
+}
+
+function newSession() {
+  if (confirm('Start a new conversation?')) location.reload();
+}
+
+function submitFeedback(btn, rating) {
+  const msgDiv = btn.closest('.message');
+  const answer = msgDiv.dataset.answer || '';
+  let correction = '';
+  if (rating === 'needs_fix') {
+    correction = prompt('What should the correct answer be? (optional)') || '';
+  }
+  fetch('/feedback', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({session_id: SESSION_ID, answer, rating, correction, question: ''})
+  }).then(() => {
+    btn.textContent = rating === 'helpful' ? '✅ Thanks!' : '✅ Noted';
+    btn.disabled = true;
+    btn.closest('.message-actions').querySelectorAll('.btn-feedback').forEach(b => b.disabled = true);
+  });
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function markdownToHtml(md) {
+  // Very basic markdown renderer
+  let h = escHtml(md);
+  h = h.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  h = h.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  h = h.replace(/`([^`]+)`/g, '<code>$1</code>');
+  h = h.replace(/^#{3}\s(.+)$/gm, '<h3>$1</h3>');
+  h = h.replace(/^#{2}\s(.+)$/gm, '<h2>$1</h2>');
+  h = h.replace(/^#\s(.+)$/gm, '<h1>$1</h1>');
+  h = h.replace(/\n/g, '<br/>');
+  return h;
+}
+
+// Scroll to bottom on load
+window.onload = () => {
+  const wrap = document.getElementById('chatMessages');
+  wrap.scrollTop = wrap.scrollHeight;
+};
+</script>
+{% endblock %}

@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block nav %}{% endblock %}
+{% block title %}Login{% endblock %}
+
+{% block content %}
+<div class="auth-container">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <img src="/assets/central7-logo.svg" alt="CENTRAL7" style="height:48px;" />
+      <h2>UK Property Market Copilot</h2>
+      <p class="auth-subtitle">Powered by HM Land Registry Open Data</p>
+    </div>
+
+    {% if error %}
+    <div class="alert alert-error">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="/login" class="auth-form">
+      <div class="form-group">
+        <label>Username</label>
+        <input type="text" name="username" required autocomplete="username" />
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" name="password" required autocomplete="current-password" />
+      </div>
+      <button type="submit" class="btn-primary">Sign In</button>
+    </form>
+
+    {% if google_sso %}
+    <div class="divider">or</div>
+    <div id="g_id_onload" data-client_id="{{ google_client_id }}" data-callback="handleGoogleLogin"></div>
+    <div class="g_id_signin" data-type="standard" data-size="large" data-theme="outline" data-text="sign_in_with" data-shape="rectangular" data-logo_alignment="left"></div>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script>
+    function handleGoogleLogin(response) {
+      fetch('/auth/google', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({credential: response.credential}) })
+        .then(r => r.json()).then(d => { if (d.ok) location.href = '/chat'; else alert('Google login failed'); });
+    }
+    </script>
+    {% endif %}
+
+    <p class="auth-switch">Don't have an account? <a href="/register">Register</a></p>
+  </div>
+</div>
+{% endblock %}

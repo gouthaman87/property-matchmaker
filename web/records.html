@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}Records Explorer{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h2>🏘 Property Records Explorer</h2>
+  <p class="page-sub">Browse HM Land Registry transactions · England &amp; Wales</p>
+</div>
+
+<!-- Filters -->
+<form method="get" action="/records" class="filter-form">
+  <div class="filter-row">
+    <div class="filter-group">
+      <label>Search (town, county, postcode, street)</label>
+      <input type="text" name="q" value="{{ q }}" placeholder="e.g. LONDON, SW1A, BAKER STREET" />
+    </div>
+    <div class="filter-group">
+      <label>County</label>
+      <select name="county">
+        <option value="">All Counties</option>
+        {% for c in counties %}
+        <option value="{{ c }}" {% if c == county %}selected{% endif %}>{{ c }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="filter-group">
+      <label>Property Type</label>
+      <select name="ptype">
+        <option value="">All Types</option>
+        <option value="Detached" {% if ptype=='Detached' %}selected{% endif %}>Detached</option>
+        <option value="Semi-Detached" {% if ptype=='Semi-Detached' %}selected{% endif %}>Semi-Detached</option>
+        <option value="Terraced" {% if ptype=='Terraced' %}selected{% endif %}>Terraced</option>
+        <option value="Flat/Maisonette" {% if ptype=='Flat/Maisonette' %}selected{% endif %}>Flat/Maisonette</option>
+        <option value="Other" {% if ptype=='Other' %}selected{% endif %}>Other</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <label>Tenure</label>
+      <select name="tenure">
+        <option value="">All</option>
+        <option value="Freehold" {% if tenure=='Freehold' %}selected{% endif %}>Freehold</option>
+        <option value="Leasehold" {% if tenure=='Leasehold' %}selected{% endif %}>Leasehold</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <label>Year From</label>
+      <input type="number" name="year_from" value="{{ year_from }}" min="1995" max="2025" placeholder="1995" style="width:90px;" />
+    </div>
+    <div class="filter-group">
+      <label>Year To</label>
+      <input type="number" name="year_to" value="{{ year_to }}" min="1995" max="2025" placeholder="2025" style="width:90px;" />
+    </div>
+    <div class="filter-group filter-btn-group">
+      <label>&nbsp;</label>
+      <button type="submit" class="btn-primary">Search</button>
+      <a href="/records" class="btn-secondary">Reset</a>
+    </div>
+  </div>
+</form>
+
+<!-- Results -->
+<div class="records-summary">
+  Showing <strong>{{ records | length }}</strong> of <strong>{{ "{:,}".format(total) }}</strong> matching records
+  (page {{ page }} of {{ pages }})
+</div>
+
+<div class="table-wrapper">
+  <table class="records-table">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Price</th>
+        <th>Address</th>
+        <th>Town</th>
+        <th>County</th>
+        <th>Postcode</th>
+        <th>Type</th>
+        <th>Tenure</th>
+        <th>New Build</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in records %}
+      <tr>
+        <td>{{ r.sale_date[:10] }}</td>
+        <td class="price-cell">£{{ "{:,}".format(r.price_num) }}</td>
+        <td>{{ r.paon }} {{ r.street }}</td>
+        <td>{{ r.town_clean }}</td>
+        <td>{{ r.county_clean }}</td>
+        <td>{{ r.postcode }}</td>
+        <td><span class="badge badge-type">{{ r.property_type_clean }}</span></td>
+        <td><span class="badge badge-tenure {% if r.tenure_clean == 'Freehold' %}badge-freehold{% else %}badge-leasehold{% endif %}">{{ r.tenure_clean }}</span></td>
+        <td class="text-center">{% if r.is_new_build %}🟢{% else %}—{% endif %}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="9" class="no-results">No records found for your search criteria.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Pagination -->
+{% if pages > 1 %}
+<div class="pagination">
+  {% if page > 1 %}
+  <a href="/records?q={{ q }}&county={{ county }}&ptype={{ ptype }}&tenure={{ tenure }}&year_from={{ year_from }}&year_to={{ year_to }}&page={{ page - 1 }}" class="btn-secondary">← Prev</a>
+  {% endif %}
+  <span class="page-info">Page {{ page }} / {{ pages }}</span>
+  {% if page < pages %}
+  <a href="/records?q={{ q }}&county={{ county }}&ptype={{ ptype }}&tenure={{ tenure }}&year_from={{ year_from }}&year_to={{ year_to }}&page={{ page + 1 }}" class="btn-secondary">Next →</a>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

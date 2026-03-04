@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h2>📊 Market Dashboard</h2>
+  <p class="page-sub">HM Land Registry Price Paid Data · England &amp; Wales</p>
+</div>
+
+<!-- KPI Cards -->
+<div class="kpi-grid">
+  <div class="kpi-card">
+    <div class="kpi-label">Total Transactions</div>
+    <div class="kpi-value">{{ "{:,}".format(kpis.total_sales | int) if kpis.total_sales else "—" }}</div>
+    <div class="kpi-sub">{{ kpis.from_year }} – {{ kpis.to_year }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Average Sale Price</div>
+    <div class="kpi-value">£{{ "{:,.0f}".format(kpis.avg_price) if kpis.avg_price else "—" }}</div>
+    <div class="kpi-sub">All time average</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Data Coverage</div>
+    <div class="kpi-value">England &amp; Wales</div>
+    <div class="kpi-sub">Since Jan 1995</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Source</div>
+    <div class="kpi-value" style="font-size:1rem;">HM Land Registry</div>
+    <div class="kpi-sub">Updated monthly · OGL v3.0</div>
+  </div>
+</div>
+
+<!-- Charts row 1 -->
+<div class="charts-grid">
+  <div class="chart-card wide">
+    <h3>Monthly Sales Volume &amp; Average Price (36 months)</h3>
+    <canvas id="monthlyChart"></canvas>
+  </div>
+</div>
+
+<!-- Charts row 2 -->
+<div class="charts-grid">
+  <div class="chart-card">
+    <h3>Top 10 Counties by Sales Volume</h3>
+    <canvas id="countiesChart"></canvas>
+  </div>
+  <div class="chart-card">
+    <h3>Property Type Mix</h3>
+    <canvas id="typeChart"></canvas>
+  </div>
+</div>
+
+<!-- Charts row 3 -->
+<div class="charts-grid">
+  <div class="chart-card">
+    <h3>Tenure: Freehold vs Leasehold</h3>
+    <canvas id="tenureChart"></canvas>
+  </div>
+  <div class="chart-card">
+    <h3>New Build vs Established (Average Price)</h3>
+    <canvas id="newBuildChart"></canvas>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const C7_RED = '#e72026';
+const C7_DARK = '#1a1a2e';
+const PALETTE = ['#e72026','#2563eb','#16a34a','#d97706','#7c3aed','#db2777','#0891b2','#65a30d','#ea580c','#4f46e5'];
+
+// Monthly trend
+const monthly = {{ monthly_trend | safe }};
+const monthlyLabels = monthly.map(r => r.sale_month);
+const monthlySales = monthly.map(r => r.sales);
+const monthlyAvg = monthly.map(r => Math.round(r.avg_price));
+
+new Chart(document.getElementById('monthlyChart'), {
+  type: 'bar',
+  data: {
+    labels: monthlyLabels,
+    datasets: [
+      { label: 'Transactions', data: monthlySales, backgroundColor: C7_RED + '88', yAxisID: 'y' },
+      { label: 'Avg Price (£)', data: monthlyAvg, type: 'line', borderColor: C7_DARK, pointRadius: 2, yAxisID: 'y1', tension: 0.3 }
+    ]
+  },
+  options: { responsive: true, interaction: {mode:'index'}, scales: {
+    y: { position:'left', title:{display:true,text:'Transactions'} },
+    y1: { position:'right', grid:{drawOnChartArea:false}, title:{display:true,text:'Avg Price (£)'}, ticks:{callback:v=>'£'+v.toLocaleString()} }
+  }}
+});
+
+// Counties
+const counties = {{ top_counties | safe }};
+new Chart(document.getElementById('countiesChart'), {
+  type: 'bar',
+  data: {
+    labels: counties.map(r => r.county_clean),
+    datasets: [{ label: 'Sales', data: counties.map(r => r.sales), backgroundColor: PALETTE }]
+  },
+  options: { indexAxis: 'y', responsive: true, plugins:{legend:{display:false}} }
+});
+
+// Property type
+const types = {{ type_mix | safe }};
+new Chart(document.getElementById('typeChart'), {
+  type: 'doughnut',
+  data: { labels: types.map(r=>r.property_type_clean), datasets: [{ data: types.map(r=>r.cnt), backgroundColor: PALETTE }] },
+  options: { responsive: true }
+});
+
+// Tenure
+const tenure = {{ tenure_mix | safe }};
+new Chart(document.getElementById('tenureChart'), {
+  type: 'pie',
+  data: { labels: tenure.map(r=>r.tenure_clean), datasets: [{ data: tenure.map(r=>r.cnt), backgroundColor: [C7_RED,'#2563eb','#aaa'] }] },
+  options: { responsive: true }
+});
+
+// New build
+const nb = {{ new_build | safe }};
+const nbLabels = nb.map(r => r.is_new_build ? 'New Build' : 'Established');
+const nbPrices = nb.map(r => Math.round(r.avg_price));
+new Chart(document.getElementById('newBuildChart'), {
+  type: 'bar',
+  data: { labels: nbLabels, datasets: [{ label:'Avg Price (£)', data: nbPrices, backgroundColor:[C7_RED,'#2563eb'] }] },
+  options: { responsive: true, plugins:{legend:{display:false}}, scales:{ y:{ ticks:{callback:v=>'£'+v.toLocaleString()} } } }
+});
+</script>
+{% endblock %}
