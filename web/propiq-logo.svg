@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 40" width="120" height="40">
+  <!-- Background pill -->
+  <rect width="120" height="40" rx="8" fill="#0f172a"/>
+
+  <!-- House icon -->
+  <polygon points="10,28 10,18 18,11 26,18 26,28" fill="none" stroke="#2563eb" stroke-width="2" stroke-linejoin="round"/>
+  <rect x="14" y="22" width="8" height="6" rx="1" fill="#2563eb"/>
+
+  <!-- PropIQ text -->
+  <text x="33" y="26" font-family="Arial,sans-serif" font-weight="900" font-size="16" fill="#ffffff" letter-spacing="0.5">Prop</text>
+  <text x="73" y="26" font-family="Arial,sans-serif" font-weight="900" font-size="16" fill="#2563eb" letter-spacing="0.5">IQ</text>
+</svg>

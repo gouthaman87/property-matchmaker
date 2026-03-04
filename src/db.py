@@ -46,6 +46,12 @@ TABLE: property_records
   paon TEXT (house number/name), saon TEXT (flat/unit), street TEXT,
   locality TEXT, town TEXT, district TEXT, county TEXT,
   ppd_category_type TEXT (A=standard/B=additional), record_status TEXT (A/C/D)
+  
+TABLE: epc_records (joinable to property_analytics on postcode)
+  lmk_key TEXT PK, address1, address2, postcode,
+  local_authority, property_type, built_form, construction_age_band,
+  total_floor_area REAL (m²), habitable_rooms INTEGER,
+  tenure, energy_rating TEXT (A-G), lodgement_date TEXT
 
 VIEW: property_analytics  (excludes deleted records, record_status != 'D')
   transaction_id, price_num INTEGER, sale_date TEXT, sale_month TEXT (YYYY-MM), sale_year TEXT,

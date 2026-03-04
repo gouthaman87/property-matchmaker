@@ -151,6 +151,30 @@ CREATE TABLE IF NOT EXISTS copilot_feedback (
 );
 """
 
+EPC_COLUMNS_KEEP = [
+    "LMK_KEY", "ADDRESS1", "ADDRESS2", "POSTCODE", "LOCAL_AUTHORITY_LABEL",
+    "PROPERTY_TYPE", "BUILT_FORM", "CONSTRUCTION_AGE_BAND",
+    "TOTAL_FLOOR_AREA", "NUMBER_HABITABLE_ROOMS", "TENURE",
+    "CURRENT_ENERGY_RATING", "LODGEMENT_DATETIME"
+]
+
+CREATE_EPC = """
+CREATE TABLE IF NOT EXISTS epc_records (
+    lmk_key               TEXT PRIMARY KEY,
+    address1              TEXT,
+    address2              TEXT,
+    postcode              TEXT,
+    local_authority       TEXT,
+    property_type         TEXT,
+    built_form            TEXT,
+    construction_age_band TEXT,
+    total_floor_area      REAL,
+    habitable_rooms       INTEGER,
+    tenure                TEXT,
+    energy_rating         TEXT,
+    lodgement_date        TEXT
+);
+"""
 
 def count_lines(path: str) -> int:
     count = 0

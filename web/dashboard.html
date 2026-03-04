@@ -23,14 +23,14 @@
     <div class="kpi-sub">All time average</div>
   </div>
   <div class="kpi-card">
-    <div class="kpi-label">Data Coverage</div>
-    <div class="kpi-value">England &amp; Wales</div>
-    <div class="kpi-sub">Since Jan 1995</div>
+    <div class="kpi-label">EPC Records</div>
+    <div class="kpi-value">{{ "{:,}".format(kpis.epc_count | int) if kpis.epc_count else "—" }}</div>
+    <div class="kpi-sub">Floor area &amp; rooms data</div>
   </div>
   <div class="kpi-card">
-    <div class="kpi-label">Source</div>
-    <div class="kpi-value" style="font-size:1rem;">HM Land Registry</div>
-    <div class="kpi-sub">Updated monthly · OGL v3.0</div>
+    <div class="kpi-label">Data Coverage</div>
+    <div class="kpi-value">England &amp; Wales</div>
+    <div class="kpi-sub">Since Jan 1995 · OGL v3.0</div>
   </div>
 </div>
 
@@ -69,9 +69,9 @@
 
 {% block scripts %}
 <script>
-const C7_RED = '#e72026';
-const C7_DARK = '#1a1a2e';
-const PALETTE = ['#e72026','#2563eb','#16a34a','#d97706','#7c3aed','#db2777','#0891b2','#65a30d','#ea580c','#4f46e5'];
+const PROPIQ_BLUE = '#2563eb';
+const PROPIQ_DARK = '#0f172a';
+const PALETTE = ['#2563eb','#e72026','#16a34a','#d97706','#7c3aed','#db2777','#0891b2','#65a30d','#ea580c','#4f46e5'];
 
 // Monthly trend
 const monthly = {{ monthly_trend | safe }};
@@ -84,8 +84,8 @@ new Chart(document.getElementById('monthlyChart'), {
   data: {
     labels: monthlyLabels,
     datasets: [
-      { label: 'Transactions', data: monthlySales, backgroundColor: C7_RED + '88', yAxisID: 'y' },
-      { label: 'Avg Price (£)', data: monthlyAvg, type: 'line', borderColor: C7_DARK, pointRadius: 2, yAxisID: 'y1', tension: 0.3 }
+      { label: 'Transactions', data: monthlySales, backgroundColor: PROPIQ_BLUE + '88', yAxisID: 'y' },
+      { label: 'Avg Price (£)', data: monthlyAvg, type: 'line', borderColor: PROPIQ_DARK, pointRadius: 2, yAxisID: 'y1', tension: 0.3 }
     ]
   },
   options: { responsive: true, interaction: {mode:'index'}, scales: {
@@ -117,7 +117,7 @@ new Chart(document.getElementById('typeChart'), {
 const tenure = {{ tenure_mix | safe }};
 new Chart(document.getElementById('tenureChart'), {
   type: 'pie',
-  data: { labels: tenure.map(r=>r.tenure_clean), datasets: [{ data: tenure.map(r=>r.cnt), backgroundColor: [C7_RED,'#2563eb','#aaa'] }] },
+  data: { labels: tenure.map(r=>r.tenure_clean), datasets: [{ data: tenure.map(r=>r.cnt), backgroundColor: [PROPIQ_BLUE,'#e72026','#aaa'] }] },
   options: { responsive: true }
 });
 
@@ -127,7 +127,7 @@ const nbLabels = nb.map(r => r.is_new_build ? 'New Build' : 'Established');
 const nbPrices = nb.map(r => Math.round(r.avg_price));
 new Chart(document.getElementById('newBuildChart'), {
   type: 'bar',
-  data: { labels: nbLabels, datasets: [{ label:'Avg Price (£)', data: nbPrices, backgroundColor:[C7_RED,'#2563eb'] }] },
+  data: { labels: nbLabels, datasets: [{ label:'Avg Price (£)', data: nbPrices, backgroundColor:[PROPIQ_BLUE,'#64748b'] }] },
   options: { responsive: true, plugins:{legend:{display:false}}, scales:{ y:{ ticks:{callback:v=>'£'+v.toLocaleString()} } } }
 });
 </script>

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>{% block title %}UK Property Market Copilot{% endblock %} | CENTRAL7</title>
+  <title>{% block title %}PropIQ{% endblock %} | UK Property Intelligence</title>
   <link rel="stylesheet" href="/static/css/main.css" />
   {% block head %}{% endblock %}
 </head>
@@ -12,8 +12,8 @@
   {% if username is defined and username %}
   <nav class="navbar">
     <div class="nav-brand">
-      <img src="/assets/central7-logo.svg" alt="CENTRAL7" class="nav-logo" />
-      <span class="nav-title">UK Property Market Copilot</span>
+      <img src="/assets/propiq-logo.svg" alt="PropIQ" class="nav-logo" />
+      <span class="nav-title">UK Property Intelligence</span>
     </div>
     <div class="nav-links">
       <a href="/chat" class="nav-link {% if request.url.path == '/chat' %}active{% endif %}">💬 Copilot</a>
@@ -34,7 +34,7 @@
 
   <footer class="footer">
     <p>
-      Data: <a href="https://www.gov.uk/government/collections/price-paid-data" target="_blank">HM Land Registry Price Paid Data</a> 
+      Data: <a href="https://www.gov.uk/government/collections/price-paid-data" target="_blank">HM Land Registry Price Paid Data</a>
       © Crown copyright — Open Government Licence v3.0 | England &amp; Wales only
     </p>
   </footer>

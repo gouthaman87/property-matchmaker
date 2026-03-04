@@ -12,6 +12,8 @@ import sys
 from typing import Any
 
 from openai import OpenAI
+from dotenv import load_dotenv
+load_dotenv()
 
 from .db import DB_PATH, get_db, schema_summary
 
