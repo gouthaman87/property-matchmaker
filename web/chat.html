@@ -1,6 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Copilot Chat{% endblock %}
 
+{% block head %}
+<script src="/static/property-results-renderer.js"></script>
+{% endblock %}
+
 {% block content %}
 <div class="chat-container">
   <div class="chat-sidebar">
@@ -46,12 +50,31 @@
         </div>
         {% elif msg.role == 'assistant' and msg.content %}
         <div class="message message-assistant" data-answer="{{ msg.content | e }}">
-          <div class="message-bubble" id="md-{{ loop.index }}">{{ msg.content }}</div>
+          <div class="message-bubble" id="bubble-{{ loop.index }}"></div>
           <div class="message-actions">
             <button class="btn-feedback helpful" onclick="submitFeedback(this, 'helpful')">👍 Helpful</button>
             <button class="btn-feedback needs-fix" onclick="submitFeedback(this, 'needs_fix')">👎 Needs Fix</button>
           </div>
         </div>
+        <script>
+          (function() {
+            var raw = {{ msg.content | tojson }};
+            var bubble = document.getElementById('bubble-{{ loop.index }}');
+            var parsed = tryParsePropertyResult(raw);
+            if (parsed) {
+              bubble.innerHTML = PropertyResultsRenderer.render(parsed);
+              PropertyResultsRenderer.bindEvents(bubble);
+            } else {
+              var analytics = tryParseAnalytics(raw);
+              if (analytics) {
+                bubble.innerHTML = renderAnalytics(analytics);
+                bindAnalyticsEvents(bubble);
+              } else {
+                bubble.innerHTML = markdownToHtml(raw);
+              }
+            }
+          })();
+        </script>
         {% endif %}
       {% endfor %}
     </div>
@@ -71,12 +94,14 @@
 <script>
 const SESSION_ID = "{{ session_id }}";
 
+/* ─── Message sending ─────────────────────────────────────── */
+
 function sendMessage() {
   const input = document.getElementById('chatInput');
   const q = input.value.trim();
   if (!q) return;
   input.value = '';
-  appendMessage('user', q);
+  appendUserMessage(q);
   document.getElementById('sendBtn').disabled = true;
   const typing = appendTyping();
 
@@ -88,37 +113,63 @@ function sendMessage() {
   .then(r => r.json())
   .then(data => {
     typing.remove();
-    appendMessage('assistant', data.reply || data.error);
+    appendAssistantMessage(data.reply || data.error || '⚠️ No response received.');
     document.getElementById('sendBtn').disabled = false;
   })
   .catch(() => {
     typing.remove();
-    appendMessage('assistant', '⚠️ Something went wrong. Please try again.');
+    appendAssistantMessage('⚠️ Something went wrong. Please try again.');
     document.getElementById('sendBtn').disabled = false;
   });
 }
 
-function appendMessage(role, content) {
+function appendUserMessage(content) {
   const wrap = document.getElementById('chatMessages');
   const welcome = wrap.querySelector('.chat-welcome');
   if (welcome) welcome.remove();
-
   const div = document.createElement('div');
-  div.className = `message message-${role}`;
-  if (role === 'assistant') {
-    div.dataset.answer = content;
-    div.innerHTML = `
-      <div class="message-bubble">${markdownToHtml(content)}</div>
-      <div class="message-actions">
-        <button class="btn-feedback helpful" onclick="submitFeedback(this, 'helpful')">👍 Helpful</button>
-        <button class="btn-feedback needs-fix" onclick="submitFeedback(this, 'needs_fix')">👎 Needs Fix</button>
-      </div>`;
-  } else {
-    div.innerHTML = `<div class="message-bubble">${escHtml(content)}</div><div class="message-meta">You</div>`;
-  }
+  div.className = 'message message-user';
+  div.innerHTML = '<div class="message-bubble">' + escHtml(content) + '</div><div class="message-meta">You</div>';
   wrap.appendChild(div);
   wrap.scrollTop = wrap.scrollHeight;
-  return div;
+}
+
+function appendAssistantMessage(rawContent) {
+  const wrap = document.getElementById('chatMessages');
+  const div = document.createElement('div');
+  div.className = 'message message-assistant';
+  div.dataset.answer = rawContent;
+
+  const bubble = document.createElement('div');
+  bubble.className = 'message-bubble';
+
+  // 1. Try property listing cards
+  // 2. Try analytics/trend table
+  // 3. Fall back to markdown
+  const parsed = tryParsePropertyResult(rawContent);
+  if (parsed) {
+    bubble.innerHTML = PropertyResultsRenderer.render(parsed);
+    PropertyResultsRenderer.bindEvents(bubble);
+  } else {
+    const analytics = tryParseAnalytics(rawContent);
+    if (analytics) {
+      bubble.innerHTML = renderAnalytics(analytics);
+      bindAnalyticsEvents(bubble);
+    } else {
+      bubble.innerHTML = markdownToHtml(rawContent);
+    }
+  }
+
+  const actions = document.createElement('div');
+  actions.className = 'message-actions';
+  actions.innerHTML =
+    '<button class="btn-feedback helpful" onclick="submitFeedback(this,\'helpful\')">👍 Helpful</button>' +
+    '<button class="btn-feedback needs-fix" onclick="submitFeedback(this,\'needs_fix\')">👎 Needs Fix</button>';
+
+  div.appendChild(bubble);
+  div.appendChild(actions);
+  wrap.appendChild(div);
+  wrap.scrollTop = wrap.scrollHeight;
 }
 
 function appendTyping() {
@@ -140,6 +191,8 @@ function newSession() {
   if (confirm('Start a new conversation?')) location.reload();
 }
 
+/* ─── Feedback ────────────────────────────────────────────── */
+
 function submitFeedback(btn, rating) {
   const msgDiv = btn.closest('.message');
   const answer = msgDiv.dataset.answer || '';
@@ -158,27 +211,342 @@ function submitFeedback(btn, rating) {
   });
 }
 
-function escHtml(s) {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+// Exposed so PropertyResultsRenderer's internal feedback buttons can call back
+window.submitCopilotFeedback = function(type) {
+  const rating = type === 'helpful' ? 'helpful' : 'needs_fix';
+  fetch('/feedback', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({session_id: SESSION_ID, answer: '', rating, correction: '', question: ''})
+  });
+};
+
+/* ─── Response parser ─────────────────────────────────────── */
+
+/**
+ * Detects whether an AI reply contains a property listing result
+ * (addresses + prices + tenure + SQL evidence block).
+ * Returns a data object for PropertyResultsRenderer, or null for
+ * plain analytics/trend answers that should use the markdown fallback.
+ */
+function tryParsePropertyResult(text) {
+  const hasPrice    = /£[\d,]+/.test(text);
+  const hasAddress  = /\d+\s+\w[\w\s]+(?:Street|Road|Lane|Drive|Avenue|Close|Way|Hill|Court|Place|Gardens|Grove|Crescent|Terrace|Walk)/i.test(text);
+  const hasSold     = /sold\s+for|£[\d,]+.*(?:freehold|leasehold)/i.test(text);
+  const hasList     = /^\d+\.\s/m.test(text);
+
+  // Only proceed if the reply looks like a property listing, not a stats answer
+  if (!(hasPrice && (hasAddress || hasSold || hasList))) return null;
+
+  // Summary = text before the numbered list
+  const summaryMatch = text.match(/^([\s\S]*?)(?=\n\n?\d+\.|$)/);
+  const summary = summaryMatch
+    ? summaryMatch[1].replace(/\*\*/g, '').trim()
+    : 'Matching properties found.';
+
+  // Parse numbered list entries
+  const properties = [];
+  const entryRe = /\d+\.\s+([\s\S]*?)(?=\n\d+\.|\n\nNotes|\n\nEvidence|\n\nLimitation|$)/g;
+  let m;
+  while ((m = entryRe.exec(text)) !== null) {
+    const block = m[1].trim();
+    const priceM   = block.match(/£([\d,]+)/);
+    const price    = priceM ? parseInt(priceM[1].replace(/,/g,''), 10) : 0;
+    const dateM    = block.match(/(\d{2}[-–]\w+[-–]\d{4}|\d{1,2}\s+\w+\s+\d{4})/);
+    const date     = dateM ? dateM[1] : '';
+    const tenureM  = block.match(/\b(Freehold|Leasehold)\b/i);
+    const tenure   = tenureM ? tenureM[1] : '';
+    const addrM    = block.match(/^(.+?)(?:\s*[—–-]\s*Sold|\s+Sold\s+for)/i);
+    let   fullAddr = addrM ? addrM[1].trim() : block.split('\n')[0].trim();
+    const pcM      = fullAddr.match(/([A-Z]{1,2}\d{1,2}[A-Z]?\s*\d[A-Z]{2})/i);
+    const postcode = pcM ? pcM[1].toUpperCase() : '';
+    const townM    = fullAddr.match(/([A-Z][A-Z\s]+)\s+[A-Z]{1,2}\d/i);
+    const town     = townM ? townM[1].trim() : '';
+    const address  = fullAddr.replace(postcode,'').replace(town,'').replace(/,\s*$/,'').trim();
+    const stationM = text.match(/near\s+([A-Z][a-zA-Z\s]+)\s+Station/i);
+    const station  = stationM ? stationM[1].trim() : '';
+    const distM    = block.match(/([\d.]+)\s*mi(?:les?)?/i);
+    const distance = distM ? distM[1] + ' mi' : '';
+    const isRecent = /202[34]/.test(date);
+    if (price || address) {
+      properties.push({
+        address, town, postcode, price, date, tenure,
+        type    : extractPropertyType(text),
+        station, distance,
+        badge   : isRecent ? 'Recent Sale' : null,
+      });
+    }
+  }
+
+  if (properties.length === 0) return null;
+
+  // SQL block
+  const sqlM = text.match(/```sql([\s\S]*?)```/) || text.match(/(SELECT\s[\s\S]*?)(?=\nRows returned|\nLimitation|$)/i);
+  const sql  = sqlM ? (sqlM[1] || sqlM[0]).trim() : '';
+
+  // Note / limitation
+  const noteM = text.match(/Limitation[:\s]+([\s\S]*?)(?=\n\n|$)/i)
+             || text.match(/Note[:\s-]+([\s\S]*?)(?=\n\n|$)/i);
+  const note  = noteM ? noteM[1].replace(/\*\*/g,'').trim() : '';
+
+  // Postcode areas from SQL LIKE clauses
+  const pcAreas = [...text.matchAll(/[`'"]([A-Z]{1,2}\d{1,2})[`'"]%/g)].map(x => x[1]);
+  const postcodeStr = [...new Set(pcAreas)].join(', ') || '';
+
+  const rowsM = text.match(/Rows returned:\s*(\d+)/i);
+  const rows  = rowsM ? parseInt(rowsM[1],10) : properties.length;
+
+  const filterLabel = [extractPropertyType(text), extractArea(text), postcodeStr]
+    .filter(Boolean).join(' · ');
+
+  return {
+    summary, filterLabel, properties, sql, note,
+    meta: { rows, postcodes: postcodeStr || '—', filter: extractPropertyType(text) || 'All' }
+  };
 }
+
+function extractPropertyType(text) {
+  const m = text.match(/\b(Detached|Semi-Detached|Terraced|Flat|Maisonette)\b/i);
+  return m ? m[1] : '';
+}
+
+function extractArea(text) {
+  const m = text.match(/near\s+([A-Z][a-zA-Z\s]+?)(?:\s+Station|\s+\(|,|\n)/i)
+         || text.match(/in\s+([A-Z][a-zA-Z\s]+?)(?:\s+postcodes?|\s+area|,|\n)/i);
+  return m ? m[1].trim() : '';
+}
+
+/* ─── Analytics / trend renderer ─────────────────────────── */
+
+/**
+ * Detects monthly trend / stats responses:
+ * bullet list of "YYYY-MM: N sales, avg. £XXX" + SQL evidence block.
+ * Returns a structured object or null.
+ */
+function tryParseAnalytics(text) {
+  // Must have at least two month-pattern bullets
+  const rowRe = /[•\-*]\s*(\d{4}-\d{2}):\s*(\d+)\s+sales?,\s*avg\.?\s*£([\d,]+)/gi;
+  const rows = [];
+  let m;
+  while ((m = rowRe.exec(text)) !== null) {
+    rows.push({
+      month : m[1],
+      sales : parseInt(m[2], 10),
+      avg   : parseInt(m[3].replace(/,/g,''), 10)
+    });
+  }
+  if (rows.length < 2) return null;
+
+  // Summary = first paragraph before bullet list
+  const summaryM = text.match(/^([\s\S]*?)(?=\n[•\-*\d])/);
+  const summary  = summaryM ? summaryM[1].replace(/\*\*/g,'').trim() : '';
+
+  // SQL block
+  const sqlM = text.match(/```sql([\s\S]*?)```/i)
+            || text.match(/(SELECT[\s\S]*?)(?=\n\nRows|\n\nNote|\n\nFor most|$)/i);
+  const sql  = sqlM ? (sqlM[1] || sqlM[0]).trim() : '';
+
+  // Notes (the cautionary text + registry lag note)
+  const noteM = text.match(/(?:For most months[\s\S]*?)(?=Evidence|SQL Used:|$)/i)
+             || text.match(/Note[:\s]+([\s\S]*?)(?=Evidence|SQL Used:|$)/i);
+  const note  = noteM ? noteM[0].replace(/^Note[:\s-]*/i,'').replace(/Evidence$/i,'').trim() : '';
+
+  // Rows returned
+  const rowsM  = text.match(/Rows returned:\s*(\d+)/i);
+  const rowCnt = rowsM ? parseInt(rowsM[1],10) : rows.length;
+
+  // Area / topic from SQL LIKE or text
+  const areaM = text.match(/LIKE\s+'%([A-Z]+)%'/i) || text.match(/(?:in|for)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s+since/i);
+  const area  = areaM ? areaM[1] : '';
+
+  return { summary, rows, sql, note, rowCnt, area };
+}
+
+function renderAnalytics(data) {
+  const { summary, rows, sql, note, rowCnt, area } = data;
+
+  // Compute trend arrow (last vs first avg price)
+  const first = rows[0].avg, last = rows[rows.length-1].avg;
+  const pctChange = ((last - first) / first * 100).toFixed(1);
+  const trending  = last >= first;
+  const trendIcon = trending ? '↑' : '↓';
+  const trendCol  = trending ? '#16a34a' : '#dc2626';
+
+  // Min/max avg price for bar scaling
+  const maxAvg = Math.max(...rows.map(r => r.avg));
+  const maxSales = Math.max(...rows.map(r => r.sales));
+
+  // SQL
+  const sqlBlock = sql ? `
+    <div class="an-sql-wrap">
+      <div class="an-sql-header">
+        <span class="an-sql-label">SQL Query</span>
+        <button class="an-copy-btn" data-copy="${escHtml(sql)}">Copy</button>
+      </div>
+      <pre class="an-sql-body">${highlightSqlAn(sql)}</pre>
+    </div>` : '';
+
+  const noteBlock = note ? `
+    <div class="an-note">💡 <span>${escHtml(note)}</span></div>` : '';
+
+  const rowsHtml = rows.map(r => {
+    const barW  = Math.round((r.avg / maxAvg) * 100);
+    const dotW  = Math.round((r.sales / maxSales) * 100);
+    const [yr, mo] = r.month.split('-');
+    const moName = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][parseInt(mo,10)-1];
+    return `
+      <div class="an-row">
+        <div class="an-month">${moName} <span class="an-year">${yr}</span></div>
+        <div class="an-bar-col">
+          <div class="an-bar-track">
+            <div class="an-bar-fill" style="width:${barW}%"></div>
+          </div>
+          <div class="an-price">£${r.avg.toLocaleString('en-GB')}</div>
+        </div>
+        <div class="an-sales-col">
+          <div class="an-dot-track">
+            <div class="an-dot-fill" style="width:${dotW}%"></div>
+          </div>
+          <div class="an-sales-count">${r.sales} <span class="an-sales-lbl">sales</span></div>
+        </div>
+      </div>`;
+  }).join('');
+
+  return `
+    <style>
+      .an-wrap { font-family:'Segoe UI','Helvetica Neue',sans-serif; max-width:660px; }
+      .an-header { background:linear-gradient(135deg,#1a3a5c 0%,#2e6da4 100%); border-radius:14px 14px 0 0; padding:16px 22px; display:flex; align-items:center; gap:12px; }
+      .an-header-icon { width:36px; height:36px; border-radius:50%; background:rgba(255,255,255,0.15); display:flex; align-items:center; justify-content:center; font-size:17px; flex-shrink:0; }
+      .an-header-title { color:#fff; font-weight:700; font-size:15px; }
+      .an-header-sub { color:rgba(255,255,255,0.65); font-size:12px; margin-top:2px; }
+      .an-header-badge { margin-left:auto; display:flex; flex-direction:column; align-items:flex-end; gap:2px; }
+      .an-trend-val { font-size:20px; font-weight:800; color:#fff; letter-spacing:-0.5px; }
+      .an-trend-lbl { font-size:11px; color:rgba(255,255,255,0.6); }
+      .an-body { background:#fff; border:1px solid #e0e4ec; border-top:none; border-radius:0 0 14px 14px; padding:18px 22px; display:flex; flex-direction:column; gap:12px; box-shadow:0 4px 20px rgba(0,0,0,0.07); }
+      .an-summary { margin:0; color:#4a5568; font-size:13.5px; line-height:1.65; background:#f8faff; border-left:3px solid #2e6da4; padding:9px 13px; border-radius:0 8px 8px 0; }
+      .an-col-labels { display:grid; grid-template-columns:70px 1fr 1fr; gap:8px; padding:0 0 4px 0; border-bottom:1px solid #f0f2f5; }
+      .an-col-lbl { font-size:10.5px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:#94a3b8; }
+      .an-col-lbl:nth-child(2) { padding-left:4px; }
+      .an-rows { display:flex; flex-direction:column; gap:6px; }
+      .an-row { display:grid; grid-template-columns:70px 1fr 1fr; gap:8px; align-items:center; padding:6px 0; border-bottom:1px solid #f8f9fb; }
+      .an-row:last-child { border-bottom:none; }
+      .an-month { font-size:13px; font-weight:600; color:#1e293b; }
+      .an-year { font-size:11px; color:#94a3b8; font-weight:400; }
+      .an-bar-col, .an-sales-col { display:flex; align-items:center; gap:8px; }
+      .an-bar-track { flex:1; height:8px; background:#f1f5f9; border-radius:4px; overflow:hidden; }
+      .an-bar-fill { height:100%; background:linear-gradient(90deg,#2563eb,#3b82f6); border-radius:4px; transition:width .4s ease; }
+      .an-dot-track { flex:1; height:8px; background:#f1f5f9; border-radius:4px; overflow:hidden; }
+      .an-dot-fill { height:100%; background:linear-gradient(90deg,#7c3aed,#a78bfa); border-radius:4px; transition:width .4s ease; }
+      .an-price { font-size:12.5px; font-weight:700; color:#1a3a5c; white-space:nowrap; min-width:82px; }
+      .an-sales-count { font-size:12.5px; font-weight:700; color:#5b21b6; white-space:nowrap; min-width:54px; }
+      .an-sales-lbl { font-size:11px; font-weight:400; color:#94a3b8; }
+      .an-note { display:flex; gap:9px; align-items:flex-start; background:#fffbeb; border:1px solid #f6d860; border-radius:9px; padding:10px 13px; font-size:12.5px; color:#7a5c00; line-height:1.6; }
+      .an-evidence-toggle { display:flex; align-items:center; gap:7px; background:none; border:1px solid #d0d7e3; color:#4a5568; font-size:12px; font-weight:600; padding:7px 13px; border-radius:8px; cursor:pointer; transition:background .15s; }
+      .an-evidence-toggle:hover { background:#f1f4f9; }
+      .an-evidence { margin-top:10px; display:none; flex-direction:column; gap:10px; }
+      .an-evidence.open { display:flex; }
+      .an-sql-wrap { background:#0f1923; border-radius:9px; overflow:hidden; }
+      .an-sql-header { display:flex; justify-content:space-between; align-items:center; padding:7px 13px; background:#1b2836; }
+      .an-sql-label { color:#7a8a9a; font-family:monospace; font-size:11px; letter-spacing:.08em; text-transform:uppercase; }
+      .an-copy-btn { background:none; border:1px solid #334; color:#7a8a9a; font-size:11px; padding:3px 9px; border-radius:5px; cursor:pointer; }
+      .an-copy-btn:hover { color:#fff; border-color:#556; }
+      .an-sql-body { margin:0; padding:13px 15px; color:#c9d1d9; font-family:'Courier New',monospace; font-size:12px; line-height:1.7; overflow-x:auto; }
+      .an-sql-kw { color:#58a6ff; font-weight:600; }
+      .an-stats { display:flex; gap:10px; }
+      .an-stat { flex:1; background:#f8faff; border:1px solid #e0e4ec; border-radius:9px; padding:10px 14px; text-align:center; }
+      .an-stat-val { font-size:17px; font-weight:800; color:#1a3a5c; }
+      .an-stat-lbl { font-size:11px; color:#6b7280; margin-top:2px; }
+      .an-chevron { display:inline-block; transition:transform .2s; font-size:10px; }
+    </style>
+    <div class="an-wrap">
+      <div class="an-header">
+        <div class="an-header-icon">📈</div>
+        <div>
+          <div class="an-header-title">Monthly Trend Analysis${area ? ' · ' + escHtml(area) : ''}</div>
+          <div class="an-header-sub">${rows.length} months · Avg price &amp; sales volume</div>
+        </div>
+        <div class="an-header-badge">
+          <div class="an-trend-val" style="color:${trendCol}">${trendIcon} ${Math.abs(pctChange)}%</div>
+          <div class="an-trend-lbl">price change</div>
+        </div>
+      </div>
+      <div class="an-body">
+        ${summary ? `<p class="an-summary">${escHtml(summary)}</p>` : ''}
+        <div class="an-col-labels">
+          <div class="an-col-lbl">Month</div>
+          <div class="an-col-lbl">Avg Price</div>
+          <div class="an-col-lbl">Volume</div>
+        </div>
+        <div class="an-rows">${rowsHtml}</div>
+        ${noteBlock}
+        <div>
+          <button class="an-evidence-toggle" onclick="this.nextElementSibling.classList.toggle('open'); this.querySelector('.an-chevron').classList.toggle('open');">
+            🔍 View Evidence &amp; SQL <span class="an-chevron">▼</span>
+          </button>
+          <div class="an-evidence">
+            ${sqlBlock}
+            <div class="an-stats">
+              <div class="an-stat"><div class="an-stat-val">${rows.length}</div><div class="an-stat-lbl">Months</div></div>
+              <div class="an-stat"><div class="an-stat-val">${rows.reduce((s,r)=>s+r.sales,0)}</div><div class="an-stat-lbl">Total Sales</div></div>
+              <div class="an-stat"><div class="an-stat-val">£${Math.round(rows.reduce((s,r)=>s+r.avg,0)/rows.length).toLocaleString('en-GB')}</div><div class="an-stat-lbl">Period Avg</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function highlightSqlAn(sql) {
+  const keywords = ['SELECT','FROM','WHERE','AND','OR','ORDER BY','LIMIT','LIKE','AS','IN','NOT','NULL','IS','GROUP BY','HAVING','COUNT','AVG','MAX','MIN','SUM','UPPER','DISTINCT'];
+  let safe = escHtml(sql);
+  keywords.forEach(kw => {
+    safe = safe.replace(new RegExp('\\b(' + kw + ')\\b','g'), '<span class="an-sql-kw">$1</span>');
+  });
+  return safe;
+}
+
+function bindAnalyticsEvents(container) {
+  container.querySelectorAll('.an-copy-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      navigator.clipboard.writeText(btn.getAttribute('data-copy')).then(() => {
+        const orig = btn.textContent;
+        btn.textContent = '✓ Copied';
+        setTimeout(() => btn.textContent = orig, 1800);
+      });
+    });
+  });
+}
+
+/* ─── Markdown fallback renderer ─────────────────────────── */
 
 function markdownToHtml(md) {
-  // Very basic markdown renderer
   let h = escHtml(md);
   h = h.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  h = h.replace(/\*(.+?)\*/g, '<em>$1</em>');
-  h = h.replace(/`([^`]+)`/g, '<code>$1</code>');
-  h = h.replace(/^#{3}\s(.+)$/gm, '<h3>$1</h3>');
-  h = h.replace(/^#{2}\s(.+)$/gm, '<h2>$1</h2>');
-  h = h.replace(/^#\s(.+)$/gm, '<h1>$1</h1>');
-  h = h.replace(/\n/g, '<br/>');
-  return h;
+  h = h.replace(/\*(.+?)\*/g,     '<em>$1</em>');
+  h = h.replace(/`([^`]+)`/g,     '<code>$1</code>');
+  h = h.replace(/^###\s(.+)$/gm,  '<h3 class="md-h3">$1</h3>');
+  h = h.replace(/^##\s(.+)$/gm,   '<h2 class="md-h2">$1</h2>');
+  h = h.replace(/^#\s(.+)$/gm,    '<h1 class="md-h1">$1</h1>');
+  h = h.replace(/^[-*]\s(.+)$/gm, '<li>$1</li>');
+  h = h.replace(/^\d+\.\s(.+)$/gm,'<li>$1</li>');
+  h = h.replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul class="md-list">$1</ul>');
+  h = h.replace(/^---+$/gm,       '<hr class="md-hr"/>');
+  h = h.replace(/\n\n/g,          '</p><p class="md-p">');
+  h = h.replace(/\n/g,            '<br/>');
+  return '<p class="md-p">' + h + '</p>';
 }
 
-// Scroll to bottom on load
-window.onload = () => {
-  const wrap = document.getElementById('chatMessages');
-  wrap.scrollTop = wrap.scrollHeight;
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;');
+}
+
+/* ─── Init ────────────────────────────────────────────────── */
+window.onload = function() {
+  document.getElementById('chatMessages').scrollTop = 999999;
 };
 </script>
 {% endblock %}
