@@ -194,6 +194,16 @@ def ingest(csv_path: str, db_path: str, append: bool = False):
     con.commit()
 
     if not append:
+        existing = cur.execute("SELECT COUNT(*) FROM property_records").fetchone()[0]
+        if existing > 0:
+            confirm = input(
+                f"WARNING: This will clear {existing:,} existing records. "
+                f"Type 'yes' to continue or use --append to add to existing data: "
+            ).strip().lower()
+            if confirm != "yes":
+                print("Aborted.")
+                con.close()
+                sys.exit(0)
         print("Clearing existing property_records …")
         cur.execute("DELETE FROM property_records")
         con.commit()
@@ -243,11 +253,17 @@ def ingest(csv_path: str, db_path: str, append: bool = False):
     cur.executescript(CREATE_VIEW)
 
     print("Building FTS index …")
-    cur.execute("DROP TABLE IF EXISTS property_fts")
-    cur.executescript(CREATE_FTS)
-    cur.execute(
-        "INSERT INTO property_fts(property_fts) VALUES('rebuild')"
-    )
+    fts_exists = cur.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='property_fts'"
+    ).fetchone()
+    if fts_exists and append:
+        # Incremental update — much faster than full rebuild
+        cur.execute("INSERT INTO property_fts(property_fts) VALUES('rebuild')")
+    else:
+        # Full rebuild
+        cur.execute("DROP TABLE IF EXISTS property_fts")
+        cur.executescript(CREATE_FTS)
+        cur.execute("INSERT INTO property_fts(property_fts) VALUES('rebuild')")
 
     print("Creating app tables …")
     cur.executescript(CREATE_SESSIONS)
