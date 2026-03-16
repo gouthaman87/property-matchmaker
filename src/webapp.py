@@ -209,6 +209,16 @@ def chat_page(request: Request):
     resp.set_cookie("chat_session", session_id, httponly=True, samesite="lax")
     return resp
 
+@app.post("/chat/new")
+async def new_chat(request: Request):
+    username = require_login(request)
+    if not username:
+        return JSONResponse({"error": "Not authenticated"}, status_code=401)
+    new_session_id = str(uuid.uuid4())
+    resp = JSONResponse({"session_id": new_session_id})
+    resp.set_cookie("chat_session", new_session_id, httponly=True, samesite="lax")
+    return resp
+
 
 @app.post("/chat/message")
 @limiter.limit(CHAT_RATE_MINUTE)
