@@ -3,6 +3,9 @@ __pycache__/
 data/*.csv
 data/*.db
 data/*.txt
+data/*.zip
+data/pp-*.csv
+!data/.gitkeep
 
 .DS_Store
 .DS_Store?
