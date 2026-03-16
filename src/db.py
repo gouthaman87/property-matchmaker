@@ -8,10 +8,13 @@ DB_PATH = os.getenv("DB_PATH", "data/uk_property.db")
 
 
 def get_db(db_path: str = DB_PATH) -> sqlite3.Connection:
-    con = sqlite3.connect(db_path, check_same_thread=False)
+    con = sqlite3.connect(db_path, check_same_thread=False, timeout=30)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA journal_mode=WAL")
-    con.execute("PRAGMA cache_size=-64000")  # 64 MB cache
+    con.execute("PRAGMA synchronous=NORMAL")
+    con.execute("PRAGMA busy_timeout=5000")   # wait up to 5s before failing on lock
+    con.execute("PRAGMA cache_size=-64000")   # 64 MB cache
+    con.execute("PRAGMA foreign_keys=ON")
     return con
 
 
