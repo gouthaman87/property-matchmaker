@@ -54,6 +54,18 @@ app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "web/static"))
 app.mount("/assets", StaticFiles(directory=os.path.join(BASE_DIR, "web/assets")), name="assets")
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "web"))
 
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
+# add directly below it:
+CHAT_RATE_MINUTE = os.getenv("CHAT_RATE_MINUTE", "10/minute")
+CHAT_RATE_DAY = os.getenv("CHAT_RATE_DAY", "100/day")
+
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 
 # ── Session helpers ──────────────────────────────────────────────────────────
 
@@ -183,6 +195,8 @@ def chat_page(request: Request):
 
 
 @app.post("/chat/message")
+@limiter.limit(CHAT_RATE_MINUTE)
+@limiter.limit(CHAT_RATE_DAY)
 async def chat_message(request: Request):
     username = require_login(request)
     if not username:
