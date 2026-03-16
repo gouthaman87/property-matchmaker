@@ -17,7 +17,7 @@ load_dotenv()
 
 from .db import DB_PATH, get_db, schema_summary
 
-MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1")
+MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
 
 # ── System prompt ────────────────────────────────────────────────────────────

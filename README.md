@@ -109,7 +109,7 @@ AUTH_SECRET=replace_with_a_strong_secret
 2. In Railway: `New Project` → `Deploy from GitHub Repo` → select this repo.
 3. Add environment variables:
    * `OPENAI_API_KEY`
-   * `OPENAI_MODEL` (optional, default `gpt-4.1`)
+   * `OPENAI_MODEL` (optional, default `gpt-4o`)
    * `AUTH_SECRET` (required in production)
    * `GOOGLE_CLIENT_ID` (optional)
 4. Add a persistent volume mounted at `/app/data` (to persist `data/uk_property.db`).
