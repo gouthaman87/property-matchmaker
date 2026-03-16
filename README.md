@@ -30,6 +30,11 @@ All data is sourced from **HM Land Registry Price Paid Data** (GOV.UK), which tr
   - Answer feedback buttons (`Helpful` / `Needs Fix`)
 * **CENTRAL7 branding** (`#e72026`, `#fcfeff`)
 
+## Requirements
+
+- Python 3.11+
+- pip
+
 ## Quick Start
 
 ### 1. Install dependencies
