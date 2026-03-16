@@ -29,7 +29,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from itsdangerous import URLSafeTimedSerializer, BadSignature
 
-from .auth import authenticate_user, register_user, google_sso_enabled, GOOGLE_CLIENT_ID
+from .auth import authenticate_user, register_user, google_sso_enabled, GOOGLE_CLIENT_ID, verify_google_token, get_or_create_google_user
 from .copilot import chat as copilot_chat
 from .db import DB_PATH, get_db, query
 
@@ -174,6 +174,22 @@ async def register_post(request: Request, username: str = Form(...), password: s
 def logout():
     resp = RedirectResponse("/login", status_code=303)
     resp.delete_cookie(COOKIE_NAME)
+    return resp
+
+@app.post("/google-login")
+async def google_login(request: Request):
+    body = await request.json()
+    credential = body.get("credential", "")
+    if not credential:
+        return JSONResponse({"error": "Missing credential"}, status_code=400)
+
+    email = verify_google_token(credential)
+    if not email:
+        return JSONResponse({"error": "Invalid Google token"}, status_code=401)
+
+    username = get_or_create_google_user(email)
+    resp = JSONResponse({"status": "ok"})
+    set_session(resp, username)
     return resp
 
 
