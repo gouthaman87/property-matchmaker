@@ -19,6 +19,7 @@ Routes:
 import json
 import os
 import uuid
+import sys
 from datetime import datetime
 from typing import Optional
 
@@ -33,6 +34,15 @@ from .copilot import chat as copilot_chat
 from .db import DB_PATH, get_db, query
 
 AUTH_SECRET = os.getenv("AUTH_SECRET", "dev-secret-change-me")
+
+if not AUTH_SECRET:
+    if os.getenv("DEBUG", "false").lower() == "true":
+        AUTH_SECRET = "dev-only-insecure-secret"
+        print("WARNING: AUTH_SECRET not set. Using insecure default for development only.")
+    else:
+        print("ERROR: AUTH_SECRET is required in production.", file=sys.stderr)
+        sys.exit(1)
+
 COOKIE_NAME = "uk_prop_session"
 SIGNER = URLSafeTimedSerializer(AUTH_SECRET)
 
